@@ -11,18 +11,22 @@ import { RecentlyMovedPanel } from "@/components/recently-moved";
 import { StaleScreenPanel } from "@/components/stale-screen";
 import { ResumeGapsPanel } from "@/components/resume-gaps";
 import { FollowUpNeededPanel } from "@/components/follow-up-needed";
+import { StalledInterviewsPanel } from "@/components/stalled-interviews";
+import { EffectivenessPanel } from "@/components/effectiveness-panel";
+import { CronHealthPanel } from "@/components/cron-health-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useState } from "react";
 
-type TabId = "pipeline" | "submissions" | "gaps" | "followups";
+type TabId = "pipeline" | "submissions" | "gaps" | "followups" | "effectiveness";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "pipeline", label: "Pipeline" },
   { id: "submissions", label: "Submissions" },
   { id: "gaps", label: "Gaps & Alerts" },
   { id: "followups", label: "Follow-Ups" },
+  { id: "effectiveness", label: "Effectiveness" },
 ];
 
 export default function Dashboard() {
@@ -42,21 +46,16 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
   };
 
-  if (isLoading) {
-    return <DashboardSkeleton />;
-  }
+  if (isLoading) return <DashboardSkeleton />;
 
   if (isError || !data) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <p className="text-lg font-semibold text-foreground">Failed to load dashboard</p>
+          <p className="text-lg font-semibold">Failed to load dashboard</p>
           <p className="text-sm text-muted-foreground mt-1">Check the API connection and try again</p>
-          <button
-            onClick={handleRefresh}
-            className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium"
-            data-testid="button-retry"
-          >
+          <button onClick={handleRefresh}
+            className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium">
             Retry
           </button>
         </div>
@@ -65,146 +64,130 @@ export default function Dashboard() {
   }
 
   const updatedAgo = dataUpdatedAt ? formatTimeAgo(dataUpdatedAt) : "";
-
   const staleCount = data.summary.stale_screen_count || 0;
   const gapCount = data.summary.resume_gaps_count || 0;
-  const alertCount = staleCount + gapCount;
+  const stalledCount = data.summary.stalled_interviews_count || 0;
+  const alertCount = staleCount + gapCount + stalledCount;
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header bar */}
+      {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b bg-card shrink-0">
         <div>
-          <h1 className="text-lg font-semibold text-foreground" data-testid="text-page-title">
-            Recruiting Operations
-          </h1>
-          <p className="text-xs text-muted-foreground" data-testid="text-updated-at">
-            {updatedAgo ? `Updated ${updatedAgo}` : ""}
-          </p>
+          <h1 className="text-lg font-semibold text-foreground">Recruiting Operations</h1>
+          {updatedAgo && (
+            <p className="text-xs text-muted-foreground">Updated {updatedAgo}</p>
+          )}
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isFetching}
-          className="p-2 rounded-md hover:bg-muted transition-colors disabled:opacity-50"
-          data-testid="button-refresh"
-          title="Refresh data"
-        >
-          <RefreshCw className={`h-4 w-4 text-muted-foreground ${isFetching ? "animate-spin" : ""}`} />
+        <button onClick={handleRefresh} disabled={isFetching}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md border border-border hover:bg-accent">
+          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+          {isFetching ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
       {/* KPI Bar */}
-      <div className="shrink-0">
-        <KPIBar summary={data.summary} />
+      <KPIBar summary={data.summary} />
+
+      {/* Tabs */}
+      <div className="flex border-b bg-card shrink-0 px-6">
+        {TABS.map((tab) => (
+          <button key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors relative ${
+              activeTab === tab.id
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            {tab.label}
+            {tab.id === "gaps" && alertCount > 0 && (
+              <span className="ml-1.5 bg-red-100 text-red-700 text-xs px-1.5 py-0.5 rounded-full">
+                {alertCount}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* Tab bar */}
-      <div className="shrink-0 border-b bg-card">
-        <div className="flex px-6">
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            const showAlert = tab.id === "gaps" && alertCount > 0;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-                  isActive
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-                data-testid={`tab-${tab.id}`}
-              >
-                {tab.label}
-                {showAlert && (
-                  <span
-                    className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded-full"
-                    style={{ backgroundColor: "hsl(25, 80%, 60%)", color: "white" }}
-                  >
-                    {alertCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main content area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="p-6 space-y-6">
-
-          {/* PIPELINE TAB */}
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6">
           {activeTab === "pipeline" && (
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6">
-              <PipelineOverview pipeline={data.pipeline} />
-              <div className="space-y-6">
-                <AwaitingNotesPanel notes={data.awaiting_notes} />
-                <ActivityFeed replies={data.recent_replies} />
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2">
+                <PipelineOverview pipeline={data.pipeline} />
+              </div>
+              <div className="space-y-4">
+                <SubmissionReadiness data={data.submission_ready} />
+                <RecentlyMovedPanel items={data.recently_moved} />
               </div>
             </div>
           )}
 
-          {/* SUBMISSIONS TAB */}
           {activeTab === "submissions" && (
-            <div className="space-y-8">
-              <RecentlyMovedPanel recentlyMoved={data.recently_moved} />
-              <SubmissionReadiness submissionReady={data.submission_ready} />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <SubmissionReadiness data={data.submission_ready} />
+              <RecentlyMovedPanel items={data.recently_moved} />
             </div>
           )}
 
-          {/* GAPS & ALERTS TAB */}
           {activeTab === "gaps" && (
-            <div className="space-y-8">
-              <StaleScreenPanel staleScreen={data.stale_screen} />
-              <ResumeGapsPanel resumeGaps={data.resume_gaps} />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <StalledInterviewsPanel items={data.stalled_interviews || []} />
+                <StaleScreenPanel items={data.stale_screen} />
+              </div>
+              <div className="space-y-4">
+                <ResumeGapsPanel items={data.resume_gaps} />
+                <AwaitingNotesPanel items={data.awaiting_notes} />
+              </div>
             </div>
           )}
 
-          {/* FOLLOW-UPS TAB */}
           {activeTab === "followups" && (
-            <FollowUpNeededPanel followUps={data.follow_ups} />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <FollowUpNeededPanel items={data.follow_ups} />
+              <CronHealthPanel items={data.cron_health || []} />
+            </div>
           )}
 
+          {activeTab === "effectiveness" && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <EffectivenessPanel data={data.effectiveness} />
+              <div className="space-y-4">
+                <ActivityFeed replies={data.recent_replies} />
+                <CronHealthPanel items={data.cron_health || []} />
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-
-      {/* System Health footer */}
-      <div className="shrink-0">
-        <SystemHealth health={data.system_health} />
       </div>
     </div>
   );
 }
 
-function formatTimeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
+function formatTimeAgo(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
 }
 
 function DashboardSkeleton() {
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="px-6 py-3 border-b bg-card shrink-0">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-3 w-24 mt-1" />
+    <div className="h-full flex flex-col gap-4 p-6">
+      <Skeleton className="h-8 w-48" />
+      <div className="grid grid-cols-8 gap-2">
+        {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
       </div>
-      <div className="px-6 py-4 shrink-0 border-b">
-        <div className="grid grid-cols-4 lg:grid-cols-8 gap-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 rounded-lg" />
-          ))}
+      <div className="grid grid-cols-3 gap-6 flex-1">
+        <div className="col-span-2 space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
         </div>
-      </div>
-      <div className="flex-1 p-6 space-y-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-32 rounded-lg" />
-        ))}
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32" />)}
+        </div>
       </div>
     </div>
   );

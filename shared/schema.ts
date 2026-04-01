@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-// Dashboard data types — no DB needed, all data comes from RF API + tracking files
-
 export const candidateSchema = z.object({
   name: z.string(),
   rf_id: z.number(),
@@ -93,6 +91,38 @@ export const followUpSchema = z.object({
   tracked_at: z.string(),
 });
 
+// NEW: Client interview stalled — no stage movement in 5+ biz days
+export const stalledInterviewSchema = z.object({
+  name: z.string(),
+  rf_id: z.number(),
+  client: z.string(),
+  role: z.string(),
+  biz_days: z.number(),
+  entered_at: z.string(),
+  rf_link: z.string(),
+});
+
+// NEW: Effectiveness metrics (derived from RF pipeline data)
+export const effectivenessMetricsSchema = z.object({
+  submissions_this_week: z.number(),
+  submissions_last_week: z.number(),
+  client_interviews_this_week: z.number(),
+  client_interviews_last_week: z.number(),
+  avg_days_to_submission: z.number(),  // avg days from Recruiter Screen → Client Submission
+  candidates_hired_total: z.number(),
+  offers_active: z.number(),
+});
+
+// NEW: Cron health (posted by each cron after every run)
+export const cronHealthItemSchema = z.object({
+  name: z.string(),
+  last_run: z.string(),
+  age_minutes: z.number(),
+  run_count: z.number(),
+  status: z.enum(["ok", "stale", "error"]),
+  last_result: z.string().optional(),
+});
+
 export const dashboardSummarySchema = z.object({
   total_active_candidates: z.number(),
   at_client_submission: z.number(),
@@ -103,6 +133,9 @@ export const dashboardSummarySchema = z.object({
   recently_moved_count: z.number(),
   stale_screen_count: z.number(),
   resume_gaps_count: z.number(),
+  stalled_interviews_count: z.number(),
+  offers_active: z.number(),
+  candidates_hired_total: z.number(),
 });
 
 export const dashboardDataSchema = z.object({
@@ -112,11 +145,14 @@ export const dashboardDataSchema = z.object({
   awaiting_notes: z.array(awaitingNoteSchema),
   recent_replies: z.array(recentReplySchema),
   system_health: z.record(z.string(), systemHealthItemSchema),
+  cron_health: z.array(cronHealthItemSchema),
   submission_ready: z.record(z.string(), submissionRoleSchema),
   recently_moved: z.array(recentlyMovedSchema),
   stale_screen: z.array(staleScreenSchema),
+  stalled_interviews: z.array(stalledInterviewSchema),
   resume_gaps: z.array(resumeGapSchema),
   follow_ups: z.array(followUpSchema),
+  effectiveness: effectivenessMetricsSchema,
 });
 
 export type Candidate = z.infer<typeof candidateSchema>;
@@ -128,7 +164,10 @@ export type SubmissionCandidate = z.infer<typeof submissionCandidateSchema>;
 export type SubmissionRole = z.infer<typeof submissionRoleSchema>;
 export type RecentlyMoved = z.infer<typeof recentlyMovedSchema>;
 export type StaleScreen = z.infer<typeof staleScreenSchema>;
+export type StalledInterview = z.infer<typeof stalledInterviewSchema>;
 export type ResumeGap = z.infer<typeof resumeGapSchema>;
 export type FollowUp = z.infer<typeof followUpSchema>;
+export type CronHealthItem = z.infer<typeof cronHealthItemSchema>;
+export type EffectivenessMetrics = z.infer<typeof effectivenessMetricsSchema>;
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 export type DashboardData = z.infer<typeof dashboardDataSchema>;
