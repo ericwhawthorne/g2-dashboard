@@ -14,20 +14,19 @@ const CRON_HEALTH_PATH = "/tmp/cron_health.json";
 const TRACKING_SNAPSHOT_PATH = "/tmp/tracking_snapshot.json";
 const CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
-const JOB_IDS = [7, 8, 11, 12, 13, 15, 17, 19, 20, 23, 24, 32];
+// Active job IDs — update when roles open/close
+// Inactive: 7 (Integral FS, on hold), 13 (Causal, closed), 15 (Great Question, closed),
+//           19 (IFH, complete), 20 (DemandTec CTO, closed), 23 (Integral SE, on hold), 24 (Integral IL, on hold)
+const JOB_IDS = [8, 11, 12, 16, 17, 18, 32];
 
 const ROLE_LOOKUP: Record<number, { client: string; role: string }> = {
-  7:  { client: "Integral Privacy Technologies", role: "Full Stack Engineer" },
+  // Active roles
   8:  { client: "Venn", role: "Senior Account Executive" },
   11: { client: "Venn", role: "Director of QA" },
   12: { client: "Valence", role: "Principal Product Manager, Enterprise" },
-  13: { client: "Causal", role: "Senior Typescript Engineer" },
-  15: { client: "Great Question", role: "Account Executive" },
+  16: { client: "Sentra", role: "Research Scientist" },
   17: { client: "Neon Health", role: "Account Executive" },
-  19: { client: "IFH (Infusion For Health)", role: "Regional Sales Director" },
-  20: { client: "DemandTec", role: "CTO" },
-  23: { client: "Integral Privacy Technologies", role: "Solutions Engineer" },
-  24: { client: "Integral Privacy Technologies", role: "Implementation Lead" },
+  18: { client: "Valence", role: "Principal Product Designer" },
   32: { client: "Mural Health", role: "VP of Engineering" },
 };
 
