@@ -5,7 +5,6 @@ import { KPIBar } from "@/components/kpi-bar";
 import { PipelineOverview } from "@/components/pipeline-overview";
 import { AwaitingNotesPanel } from "@/components/awaiting-notes";
 import { ActivityFeed } from "@/components/activity-feed";
-import { SystemHealth } from "@/components/system-health";
 import { SubmissionReadiness } from "@/components/submission-readiness";
 import { RecentlyMovedPanel } from "@/components/recently-moved";
 import { StaleScreenPanel } from "@/components/stale-screen";
@@ -64,20 +63,16 @@ export default function Dashboard() {
   }
 
   const updatedAgo = dataUpdatedAt ? formatTimeAgo(dataUpdatedAt) : "";
-  const staleCount = data.summary.stale_screen_count || 0;
-  const gapCount = data.summary.resume_gaps_count || 0;
-  const stalledCount = data.summary.stalled_interviews_count || 0;
-  const alertCount = staleCount + gapCount + stalledCount;
+  const alertCount = (data.summary.stale_screen_count || 0) +
+    (data.summary.resume_gaps_count || 0) +
+    (data.summary.stalled_interviews_count || 0);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b bg-card shrink-0">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Recruiting Operations</h1>
-          {updatedAgo && (
-            <p className="text-xs text-muted-foreground">Updated {updatedAgo}</p>
-          )}
+          {updatedAgo && <p className="text-xs text-muted-foreground">Updated {updatedAgo}</p>}
         </div>
         <button onClick={handleRefresh} disabled={isFetching}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md border border-border hover:bg-accent">
@@ -86,15 +81,12 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* KPI Bar */}
       <KPIBar summary={data.summary} />
 
-      {/* Tabs */}
       <div className="flex border-b bg-card shrink-0 px-6">
         {TABS.map((tab) => (
-          <button key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors relative ${
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -109,7 +101,6 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-6">
           {activeTab === "pipeline" && (
@@ -118,16 +109,16 @@ export default function Dashboard() {
                 <PipelineOverview pipeline={data.pipeline} />
               </div>
               <div className="space-y-4">
-                <SubmissionReadiness data={data.submission_ready} />
-                <RecentlyMovedPanel items={data.recently_moved} />
+                <SubmissionReadiness submissionReady={data.submission_ready} />
+                <RecentlyMovedPanel recentlyMoved={data.recently_moved} />
               </div>
             </div>
           )}
 
           {activeTab === "submissions" && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <SubmissionReadiness data={data.submission_ready} />
-              <RecentlyMovedPanel items={data.recently_moved} />
+              <SubmissionReadiness submissionReady={data.submission_ready} />
+              <RecentlyMovedPanel recentlyMoved={data.recently_moved} />
             </div>
           )}
 
@@ -135,18 +126,18 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <StalledInterviewsPanel items={data.stalled_interviews || []} />
-                <StaleScreenPanel items={data.stale_screen} />
+                <StaleScreenPanel staleScreen={data.stale_screen} />
               </div>
               <div className="space-y-4">
-                <ResumeGapsPanel items={data.resume_gaps} />
-                <AwaitingNotesPanel items={data.awaiting_notes} />
+                <ResumeGapsPanel resumeGaps={data.resume_gaps} />
+                <AwaitingNotesPanel notes={data.awaiting_notes} />
               </div>
             </div>
           )}
 
           {activeTab === "followups" && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <FollowUpNeededPanel items={data.follow_ups} />
+              <FollowUpNeededPanel followUps={data.follow_ups} />
               <CronHealthPanel items={data.cron_health || []} />
             </div>
           )}
