@@ -120,7 +120,7 @@ async function buildDashboardData(): Promise<DashboardData> {
         name: cand.name || `${cand.first_name || ""} ${cand.last_name || ""}`.trim() || "Unknown",
         rf_id: rfId,
         stage,
-        rf_link: `https://app.recruiterflow.com/candidate/${rfId}`,
+        rf_link: `https://recruiterflow.com/prospect/${rfId}`,
       });
 
       totalActive++;
@@ -134,7 +134,7 @@ async function buildDashboardData(): Promise<DashboardData> {
         stage_counts: stageCounts,
         total_active: activeCandidates.length,
         candidates: activeCandidates,
-        rf_link: `https://app.recruiterflow.com/jobs/${jobId}`,
+        rf_link: `https://recruiterflow.com/db_415de1da982a52aab7da4868fc19db91/jobs/${jobId}`,
       };
     }
   }
@@ -204,7 +204,7 @@ async function buildDashboardData(): Promise<DashboardData> {
       const { stage, enteredAt } = getCurrentStage(stagesArr);
       const rfId = cand.id || 0;
       const name = cand.name || "Unknown";
-      const rfLink = `https://app.recruiterflow.com/candidate/${rfId}`;
+      const rfLink = `https://recruiterflow.com/prospect/${rfId}`;
 
       if (EXCLUDED_STAGES.has(stage) && stage !== "Hired") continue;
 
