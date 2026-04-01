@@ -12,7 +12,7 @@ const RF_BASE = "https://api.recruiterflow.com/api/external";
 const CACHE_PATH = "/tmp/dashboard_data.json";
 const CRON_HEALTH_PATH = "/tmp/cron_health.json";
 const TRACKING_SNAPSHOT_PATH = "/tmp/tracking_snapshot.json";
-const CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+const CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
 const JOB_IDS = [7, 8, 11, 12, 13, 15, 17, 19, 20, 23, 24, 32];
 
