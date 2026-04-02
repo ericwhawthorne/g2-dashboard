@@ -335,6 +335,7 @@ async function buildDashboardData(): Promise<DashboardData> {
       at_client_submission: atClientSubmission,
       resumes_this_week: snapshot.resumes_this_week ?? 0,
       replies_this_week: snapshot.replies_this_week ?? 0,
+      bd_replies_this_week: snapshot.bd_replies_this_week ?? 0,
       awaiting_notes_count: awaitingNotes.length,
       active_roles: Object.keys(pipeline).length,
       recently_moved_count: recentlyMoved.length,
