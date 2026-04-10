@@ -9,9 +9,10 @@ import type {
 
 const RF_API_KEY = process.env.RF_API_KEY || "aec5480609260ec2d09f16aaede75bd7";
 const RF_BASE = "https://api.recruiterflow.com/api/external";
-const CACHE_PATH = "/tmp/dashboard_data.json";
-const CRON_HEALTH_PATH = "/tmp/cron_health.json";
-const TRACKING_SNAPSHOT_PATH = "/tmp/tracking_snapshot.json";
+// In-memory storage — survives normal operation, repopulates after restart via cron pings
+let _cronHealth: Record<string, any> = {};
+let _trackingSnapshot: Record<string, any> = {};
+let _dashboardCache: { data: any; ts: number } | null = null;
 const CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
 // Active job IDs — update when roles open/close
@@ -41,6 +42,10 @@ function readJsonFile(filePath: string): any {
   try { return JSON.parse(fs.readFileSync(filePath, "utf-8")); }
   catch { return null; }
 }
+
+// In-memory accessors
+function getCronHealth(): Record<string, any> { return _cronHealth; }
+function getTrackingSnapshot(): Record<string, any> { return _trackingSnapshot; }
 
 async function rfFetch(endpoint: string, params: Record<string, string> = {}): Promise<any> {
   const url = new URL(`${RF_BASE}${endpoint}`);
@@ -307,7 +312,7 @@ async function buildDashboardData(): Promise<DashboardData> {
   };
 
   // Cron health — from POST endpoint or empty
-  const cronHealthRaw = readJsonFile(CRON_HEALTH_PATH) || {};
+  const cronHealthRaw = getCronHealth();
   const cronHealth: CronHealthItem[] = Object.entries(cronHealthRaw).map(([name, v]: [string, any]) => {
     const ageMin = v.last_run
       ? Math.round((Date.now() - new Date(v.last_run).getTime()) / 60000)
@@ -326,7 +331,7 @@ async function buildDashboardData(): Promise<DashboardData> {
   });
 
   // Tracking snapshot (from POST endpoint)
-  const snapshot = readJsonFile(TRACKING_SNAPSHOT_PATH) || {};
+  const snapshot = getTrackingSnapshot();
 
   return {
     generated_at: new Date().toISOString(),
@@ -364,13 +369,13 @@ async function getDashboardData(): Promise<DashboardData> {
   try {
     const stat = fs.statSync(CACHE_PATH);
     if (Date.now() - stat.mtimeMs < CACHE_MAX_AGE_MS) {
-      const cached = readJsonFile(CACHE_PATH);
+      const cached = _dashboardCache?.data;
       if (cached) return cached;
     }
   } catch { /* no cache */ }
 
   const data = await buildDashboardData();
-  try { fs.writeFileSync(CACHE_PATH, JSON.stringify(data, null, 2)); } catch { /* ok */ }
+  _dashboardCache = { data, ts: Date.now() };
   return data;
 }
 
@@ -381,7 +386,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(await getDashboardData());
     } catch (err: any) {
       console.error("Dashboard API error:", err);
-      const cached = readJsonFile(CACHE_PATH);
+      const cached = _dashboardCache?.data;
       if (cached) res.json(cached);
       else res.status(500).json({ error: "Failed to fetch dashboard data" });
     }
@@ -398,11 +403,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const { name, last_run, run_count, last_result } = req.body;
       if (!name) return res.status(400).json({ error: "name required" });
-      const health = readJsonFile(CRON_HEALTH_PATH) || {};
+      const health = getCronHealth();
       health[name] = { last_run, run_count, last_result, updated_at: new Date().toISOString() };
       fs.writeFileSync(CRON_HEALTH_PATH, JSON.stringify(health, null, 2));
       // Bust dashboard cache so next request reflects updated cron health
-      try { fs.unlinkSync(CACHE_PATH); } catch { /* ok */ }
+      _dashboardCache = null;
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -414,8 +419,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/tracking-snapshot", (req, res) => {
     try {
       const snapshot = req.body;
-      fs.writeFileSync(TRACKING_SNAPSHOT_PATH, JSON.stringify({ ...snapshot, updated_at: new Date().toISOString() }, null, 2));
-      try { fs.unlinkSync(CACHE_PATH); } catch { /* ok */ }
+      _trackingSnapshot = { ...snapshot, updated_at: new Date().toISOString() };
+      _dashboardCache = null;
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
