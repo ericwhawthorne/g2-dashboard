@@ -1,34 +1,36 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import fs from "fs";
 import type {
   DashboardData, PipelineRole, AwaitingNote, RecentReply, SystemHealthItem,
   SubmissionCandidate, SubmissionRole, RecentlyMoved, StaleScreen, ResumeGap,
-  FollowUp, StalledInterview, CronHealthItem, EffectivenessMetrics
+  FollowUp, StalledInterview, CronHealthItem, EffectivenessMetrics,
+  ClientHealth, BdReply, PriorityItem,
 } from "@shared/schema";
 
 const RF_API_KEY = process.env.RF_API_KEY || "aec5480609260ec2d09f16aaede75bd7";
 const RF_BASE = "https://api.recruiterflow.com/api/external";
+
 // In-memory storage — survives normal operation, repopulates after restart via cron pings
 let _cronHealth: Record<string, any> = {};
 let _trackingSnapshot: Record<string, any> = {};
-let _dashboardCache: { data: any; ts: number } | null = null;
+let _dashboardCache: { data: DashboardData; ts: number } | null = null;
 const CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
-// Active job IDs — update when roles open/close
-// Inactive: 7 (Integral FS, on hold), 13 (Causal, closed), 15 (Great Question, closed),
-//           19 (IFH, complete), 20 (DemandTec CTO, closed), 23 (Integral SE, on hold), 24 (Integral IL, on hold)
-const JOB_IDS = [8, 11, 12, 16, 17, 18, 32];
+function getCronHealth(): Record<string, any> { return _cronHealth; }
+function getTrackingSnapshot(): Record<string, any> { return _trackingSnapshot; }
+
+// Active job IDs
+const JOB_IDS = [8, 11, 12, 16, 17, 18, 32, 38];
 
 const ROLE_LOOKUP: Record<number, { client: string; role: string }> = {
-  // Active roles
-  8:  { client: "Venn", role: "Senior Account Executive" },
-  11: { client: "Venn", role: "Director of QA" },
-  12: { client: "Valence", role: "Principal Product Manager, Enterprise" },
-  16: { client: "Sentra", role: "Research Scientist" },
-  17: { client: "Neon Health", role: "Account Executive" },
-  18: { client: "Valence", role: "Principal Product Designer" },
-  32: { client: "Mural Health", role: "VP of Engineering" },
+  8:  { client: "Venn",             role: "Senior Account Executive" },
+  11: { client: "Venn",             role: "Director of QA" },
+  12: { client: "Valence",          role: "Principal Product Manager, Enterprise" },
+  16: { client: "Sentra",           role: "Research Scientist" },
+  17: { client: "Neon Health",      role: "Account Executive" },
+  18: { client: "Valence",          role: "Principal Product Designer" },
+  32: { client: "Mural Health",     role: "CTO" },
+  38: { client: "OPEX Corporation", role: "Staff Accountant" },
 };
 
 const EXCLUDED_STAGES = new Set(["Sourced", "Applied", "Disqualified", "Rejected", "Withdrawn", "Archived"]);
@@ -37,15 +39,6 @@ const ABOVE_SCREEN_STAGES = new Set([
   "Client Submission", "Ready for Company Submission", "Ready for Client Submission",
   "Sent to Client", "Client Interview", "Offer", "Hired", "Sent to client for review",
 ]);
-
-function readJsonFile(filePath: string): any {
-  try { return JSON.parse(fs.readFileSync(filePath, "utf-8")); }
-  catch { return null; }
-}
-
-// In-memory accessors
-function getCronHealth(): Record<string, any> { return _cronHealth; }
-function getTrackingSnapshot(): Record<string, any> { return _trackingSnapshot; }
 
 async function rfFetch(endpoint: string, params: Record<string, string> = {}): Promise<any> {
   const url = new URL(`${RF_BASE}${endpoint}`);
@@ -114,7 +107,6 @@ async function buildDashboardData(): Promise<DashboardData> {
       const cand = c.candidate || c;
       const { stage } = getCurrentStage(c.stages || []);
 
-      // Count hired and offers even though excluded from active
       if (stage === "Hired") { candidatesHiredTotal++; continue; }
       if (stage === "Offer") offersActive++;
       if (EXCLUDED_STAGES.has(stage)) continue;
@@ -192,16 +184,45 @@ async function buildDashboardData(): Promise<DashboardData> {
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-  // Effectiveness metrics accumulators
   let submissionsThisWeek = 0;
   let submissionsLastWeek = 0;
   let clientInterviewsThisWeek = 0;
   let clientInterviewsLastWeek = 0;
   const daysToSubmissionList: number[] = [];
 
+  // Per-client health tracking
+  const clientHealthMap: Record<string, {
+    client: string;
+    roles: string[];
+    in_interview: number;
+    sent_to_client: number;
+    at_submission: number;
+    stalled: number;
+    last_movement_at: string;
+    last_movement_name: string;
+    last_movement_stage: string;
+  }> = {};
+
   for (const { jobId, candidates } of pipelineResults) {
     const info = ROLE_LOOKUP[jobId] || { client: `Job ${jobId}`, role: `Role ${jobId}` };
     const roleKey = String(jobId);
+    const clientKey = info.client;
+
+    if (!clientHealthMap[clientKey]) {
+      clientHealthMap[clientKey] = {
+        client: clientKey,
+        roles: [],
+        in_interview: 0,
+        sent_to_client: 0,
+        at_submission: 0,
+        stalled: 0,
+        last_movement_at: "",
+        last_movement_name: "",
+        last_movement_stage: "",
+      };
+    }
+    const clientEntry = clientHealthMap[clientKey];
+    if (!clientEntry.roles.includes(info.role)) clientEntry.roles.push(info.role);
 
     for (const c of candidates) {
       const cand = c.candidate || c;
@@ -213,14 +234,13 @@ async function buildDashboardData(): Promise<DashboardData> {
 
       if (EXCLUDED_STAGES.has(stage) && stage !== "Hired") continue;
 
-      // Effectiveness: count stage entries this week / last week
+      // Effectiveness metrics
       if (enteredAt) {
         const enteredDate = new Date(enteredAt);
         if (CLIENT_SUBMISSION_STAGES.has(stage)) {
           if (enteredDate >= oneWeekAgo) submissionsThisWeek++;
           else if (enteredDate >= twoWeeksAgo) submissionsLastWeek++;
 
-          // Time to submission: find when they entered Recruiter Screen
           const screenStage = stagesArr.find((s: any) => s.to === "Recruiter Screen");
           if (screenStage?.time) {
             const days = daysSince(screenStage.time) - daysSince(enteredAt);
@@ -231,6 +251,22 @@ async function buildDashboardData(): Promise<DashboardData> {
           if (enteredDate >= oneWeekAgo) clientInterviewsThisWeek++;
           else if (enteredDate >= twoWeeksAgo) clientInterviewsLastWeek++;
         }
+      }
+
+      // Per-client health counters
+      if (stage === "Client Interview") {
+        clientEntry.in_interview++;
+        const bd = businessDaysSince(enteredAt);
+        if (bd >= 5) clientEntry.stalled++;
+      }
+      if (stage === "Sent to Client" || stage === "Sent to client for review") clientEntry.sent_to_client++;
+      if (CLIENT_SUBMISSION_STAGES.has(stage)) clientEntry.at_submission++;
+
+      // Track most recent movement for this client
+      if (enteredAt && (!clientEntry.last_movement_at || enteredAt > clientEntry.last_movement_at)) {
+        clientEntry.last_movement_at = enteredAt;
+        clientEntry.last_movement_name = name;
+        clientEntry.last_movement_stage = stage;
       }
 
       if (CLIENT_SUBMISSION_STAGES.has(stage)) {
@@ -257,18 +293,13 @@ async function buildDashboardData(): Promise<DashboardData> {
             biz_days: bd, entered_at: enteredAt.slice(0, 10), rf_link: rfLink,
           });
         }
-        // Awaiting notes: has resume in RF, no exec summary
         if (rfId && fileCache[rfId]) {
           const { hasResume, hasExec } = checkFiles(rfId);
           if (hasResume && !hasExec && !awaitingNotes.find(a => a.name === name)) {
-            awaitingNotes.push({
-              name, client: info.client, role: info.role,
-              rf_link: rfLink,
-            });
+            awaitingNotes.push({ name, client: info.client, role: info.role, rf_link: rfLink });
           }
         }
       } else if (stage === "Client Interview") {
-        // Stalled: at Client Interview 5+ biz days with no movement
         const bd = businessDaysSince(enteredAt);
         if (bd >= 5) {
           stalledInterviews.push({
@@ -311,7 +342,84 @@ async function buildDashboardData(): Promise<DashboardData> {
     offers_active: offersActive,
   };
 
-  // Cron health — from POST endpoint or empty
+  // Client health cards
+  const clientHealth: ClientHealth[] = Object.values(clientHealthMap).map(ch => ({
+    client: ch.client,
+    roles: ch.roles,
+    in_interview: ch.in_interview,
+    sent_to_client: ch.sent_to_client,
+    at_submission: ch.at_submission,
+    stalled: ch.stalled,
+    last_movement_days: ch.last_movement_at ? daysSince(ch.last_movement_at) : 99,
+    last_movement_name: ch.last_movement_name,
+    last_movement_stage: ch.last_movement_stage,
+    last_movement_at: ch.last_movement_at ? ch.last_movement_at.slice(0, 10) : "",
+  })).sort((a, b) => (b.in_interview + b.sent_to_client) - (a.in_interview + a.sent_to_client));
+
+  // BD pipeline from tracking snapshot
+  const snapshot = getTrackingSnapshot();
+  const bdReplies: BdReply[] = (snapshot.bd_replies || []).map((r: any) => ({
+    name: r.name || "",
+    email: r.email || "",
+    company: r.company || "",
+    days_since_reply: typeof r.days_since_reply === "number" ? r.days_since_reply : daysSince(r.timestamp || ""),
+    timestamp: r.timestamp || "",
+    status: (typeof r.days_since_reply === "number" ? r.days_since_reply : daysSince(r.timestamp || "")) >= 5 ? "cold" : "warm",
+  }));
+
+  // Today's priorities — ordered by urgency
+  const priorities: PriorityItem[] = [];
+
+  // 1. Resume gaps above Recruiter Screen (HIGH)
+  for (const g of resumeGaps.slice(0, 5)) {
+    const missing = !g.has_resume ? "resume" : "exec summary";
+    priorities.push({
+      type: "resume_gap",
+      urgency: "high",
+      label: `Upload ${missing} — ${g.name}`,
+      sub: `${g.client} / ${g.role} — ${g.stage}`,
+      rf_link: g.rf_link,
+    });
+  }
+
+  // 2. Stalled interviews (HIGH if 10+ biz days, NORMAL otherwise)
+  for (const s of stalledInterviews.slice(0, 5)) {
+    priorities.push({
+      type: "stalled_interview",
+      urgency: s.biz_days >= 10 ? "high" : "normal",
+      label: `Follow up — ${s.name} stalled at Client Interview`,
+      sub: `${s.client} / ${s.role} — ${s.biz_days} biz days`,
+      rf_link: s.rf_link,
+    });
+  }
+
+  // 3. Stale screens (NORMAL)
+  for (const s of staleScreen.slice(0, 5)) {
+    priorities.push({
+      type: "stale_screen",
+      urgency: s.biz_days >= 7 ? "normal" : "low",
+      label: `Advance or disqualify — ${s.name}`,
+      sub: `${s.client} / ${s.role} — ${s.biz_days} biz days in Recruiter Screen`,
+      rf_link: s.rf_link,
+    });
+  }
+
+  // 4. Awaiting notes
+  for (const a of awaitingNotes.slice(0, 3)) {
+    priorities.push({
+      type: "awaiting_notes",
+      urgency: "normal",
+      label: `Add notes — ${a.name} (exec summary pending)`,
+      sub: `${a.client} / ${a.role}`,
+      rf_link: a.rf_link,
+    });
+  }
+
+  // Sort: high → normal → low
+  const urgencyOrder: Record<string, number> = { high: 0, normal: 1, low: 2 };
+  priorities.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
+
+  // Cron health
   const cronHealthRaw = getCronHealth();
   const cronHealth: CronHealthItem[] = Object.entries(cronHealthRaw).map(([name, v]: [string, any]) => {
     const ageMin = v.last_run
@@ -329,9 +437,6 @@ async function buildDashboardData(): Promise<DashboardData> {
       last_result: v.last_result || "",
     };
   });
-
-  // Tracking snapshot (from POST endpoint)
-  const snapshot = getTrackingSnapshot();
 
   return {
     generated_at: new Date().toISOString(),
@@ -362,51 +467,43 @@ async function buildDashboardData(): Promise<DashboardData> {
     resume_gaps: resumeGaps,
     follow_ups: snapshot.follow_ups ?? [],
     effectiveness,
+    client_health: clientHealth,
+    bd_replies: bdReplies,
+    priorities,
   };
 }
 
 async function getDashboardData(): Promise<DashboardData> {
-  try {
-    const stat = fs.statSync(CACHE_PATH);
-    if (Date.now() - stat.mtimeMs < CACHE_MAX_AGE_MS) {
-      const cached = _dashboardCache?.data;
-      if (cached) return cached;
-    }
-  } catch { /* no cache */ }
-
+  if (_dashboardCache && (Date.now() - _dashboardCache.ts) < CACHE_MAX_AGE_MS) {
+    return _dashboardCache.data;
+  }
   const data = await buildDashboardData();
   _dashboardCache = { data, ts: Date.now() };
   return data;
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
-  // Main dashboard endpoint
   app.get("/api/dashboard", async (_req, res) => {
     try {
       res.json(await getDashboardData());
     } catch (err: any) {
       console.error("Dashboard API error:", err);
-      const cached = _dashboardCache?.data;
-      if (cached) res.json(cached);
+      if (_dashboardCache?.data) res.json(_dashboardCache.data);
       else res.status(500).json({ error: "Failed to fetch dashboard data" });
     }
   });
 
-  // Health check
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Cron health POST endpoint — called by each cron after every run
-  // Body: { cron_id, name, last_run, run_count, last_result }
   app.post("/api/cron-ping", (req, res) => {
     try {
       const { name, last_run, run_count, last_result } = req.body;
       if (!name) return res.status(400).json({ error: "name required" });
       const health = getCronHealth();
       health[name] = { last_run, run_count, last_result, updated_at: new Date().toISOString() };
-      fs.writeFileSync(CRON_HEALTH_PATH, JSON.stringify(health, null, 2));
-      // Bust dashboard cache so next request reflects updated cron health
+      _cronHealth = health;
       _dashboardCache = null;
       res.json({ ok: true });
     } catch (err: any) {
@@ -414,8 +511,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // Tracking snapshot POST endpoint — called by morning briefing cron
-  // Body: { resumes_this_week, replies_this_week, recent_replies, follow_ups }
   app.post("/api/tracking-snapshot", (req, res) => {
     try {
       const snapshot = req.body;

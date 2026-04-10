@@ -13,23 +13,27 @@ import { FollowUpNeededPanel } from "@/components/follow-up-needed";
 import { StalledInterviewsPanel } from "@/components/stalled-interviews";
 import { EffectivenessPanel } from "@/components/effectiveness-panel";
 import { CronHealthPanel } from "@/components/cron-health-panel";
+import { TodaysPriorities } from "@/components/todays-priorities";
+import { ClientHealthPanel } from "@/components/client-health";
+import { BdPipelinePanel } from "@/components/bd-pipeline";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useState } from "react";
 
-type TabId = "pipeline" | "submissions" | "gaps" | "followups" | "effectiveness";
+type TabId = "today" | "pipeline" | "clients" | "gaps" | "followups" | "effectiveness";
 
 const TABS: Array<{ id: TabId; label: string }> = [
-  { id: "pipeline", label: "Pipeline" },
-  { id: "submissions", label: "Submissions" },
-  { id: "gaps", label: "Gaps & Alerts" },
-  { id: "followups", label: "Follow-Ups" },
+  { id: "today",         label: "Today" },
+  { id: "pipeline",      label: "Pipeline" },
+  { id: "clients",       label: "Clients" },
+  { id: "gaps",          label: "Gaps & Alerts" },
+  { id: "followups",     label: "Follow-Ups" },
   { id: "effectiveness", label: "Effectiveness" },
 ];
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<TabId>("pipeline");
+  const [activeTab, setActiveTab] = useState<TabId>("today");
 
   const { data, isLoading, isError, isFetching, dataUpdatedAt } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard"],
@@ -66,6 +70,7 @@ export default function Dashboard() {
   const alertCount = (data.summary.stale_screen_count || 0) +
     (data.summary.resume_gaps_count || 0) +
     (data.summary.stalled_interviews_count || 0);
+  const priorityCount = (data.priorities || []).filter(p => p.urgency === "high").length;
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -92,6 +97,11 @@ export default function Dashboard() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}>
             {tab.label}
+            {tab.id === "today" && priorityCount > 0 && (
+              <span className="ml-1.5 bg-red-100 text-red-700 text-xs px-1.5 py-0.5 rounded-full">
+                {priorityCount}
+              </span>
+            )}
             {tab.id === "gaps" && alertCount > 0 && (
               <span className="ml-1.5 bg-red-100 text-red-700 text-xs px-1.5 py-0.5 rounded-full">
                 {alertCount}
@@ -103,6 +113,20 @@ export default function Dashboard() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-6">
+
+          {activeTab === "today" && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 space-y-6">
+                <TodaysPriorities priorities={data.priorities || []} />
+                <StalledInterviewsPanel items={data.stalled_interviews || []} />
+              </div>
+              <div className="space-y-4">
+                <RecentlyMovedPanel recentlyMoved={data.recently_moved} />
+                <AwaitingNotesPanel notes={data.awaiting_notes} />
+              </div>
+            </div>
+          )}
+
           {activeTab === "pipeline" && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <div className="xl:col-span-2">
@@ -115,10 +139,10 @@ export default function Dashboard() {
             </div>
           )}
 
-          {activeTab === "submissions" && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <SubmissionReadiness submissionReady={data.submission_ready} />
-              <RecentlyMovedPanel recentlyMoved={data.recently_moved} />
+          {activeTab === "clients" && (
+            <div className="space-y-6">
+              <ClientHealthPanel clients={data.client_health || []} />
+              <BdPipelinePanel replies={data.bd_replies || []} />
             </div>
           )}
 
@@ -151,6 +175,7 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
         </div>
       </div>
     </div>

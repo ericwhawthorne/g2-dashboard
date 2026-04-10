@@ -91,7 +91,6 @@ export const followUpSchema = z.object({
   tracked_at: z.string(),
 });
 
-// NEW: Client interview stalled — no stage movement in 5+ biz days
 export const stalledInterviewSchema = z.object({
   name: z.string(),
   rf_id: z.number(),
@@ -102,18 +101,16 @@ export const stalledInterviewSchema = z.object({
   rf_link: z.string(),
 });
 
-// NEW: Effectiveness metrics (derived from RF pipeline data)
 export const effectivenessMetricsSchema = z.object({
   submissions_this_week: z.number(),
   submissions_last_week: z.number(),
   client_interviews_this_week: z.number(),
   client_interviews_last_week: z.number(),
-  avg_days_to_submission: z.number(),  // avg days from Recruiter Screen → Client Submission
+  avg_days_to_submission: z.number(),
   candidates_hired_total: z.number(),
   offers_active: z.number(),
 });
 
-// NEW: Cron health (posted by each cron after every run)
 export const cronHealthItemSchema = z.object({
   name: z.string(),
   last_run: z.string(),
@@ -123,11 +120,45 @@ export const cronHealthItemSchema = z.object({
   last_result: z.string().optional(),
 });
 
+// Client health card
+export const clientHealthSchema = z.object({
+  client: z.string(),
+  roles: z.array(z.string()),
+  in_interview: z.number(),
+  sent_to_client: z.number(),
+  at_submission: z.number(),
+  stalled: z.number(),
+  last_movement_days: z.number(),
+  last_movement_name: z.string(),
+  last_movement_stage: z.string(),
+  last_movement_at: z.string(),
+});
+
+// BD pipeline reply
+export const bdReplySchema = z.object({
+  name: z.string(),
+  email: z.string(),
+  company: z.string(),
+  days_since_reply: z.number(),
+  timestamp: z.string(),
+  status: z.enum(["warm", "cold"]),
+});
+
+// Today's priorities item
+export const priorityItemSchema = z.object({
+  type: z.enum(["resume_gap", "stalled_interview", "stale_screen", "awaiting_notes", "follow_up"]),
+  urgency: z.enum(["high", "normal", "low"]),
+  label: z.string(),
+  sub: z.string(),
+  rf_link: z.string().optional(),
+});
+
 export const dashboardSummarySchema = z.object({
   total_active_candidates: z.number(),
   at_client_submission: z.number(),
   resumes_this_week: z.number(),
   replies_this_week: z.number(),
+  bd_replies_this_week: z.number().optional(),
   awaiting_notes_count: z.number(),
   active_roles: z.number(),
   recently_moved_count: z.number(),
@@ -153,6 +184,9 @@ export const dashboardDataSchema = z.object({
   resume_gaps: z.array(resumeGapSchema),
   follow_ups: z.array(followUpSchema),
   effectiveness: effectivenessMetricsSchema,
+  client_health: z.array(clientHealthSchema).optional(),
+  bd_replies: z.array(bdReplySchema).optional(),
+  priorities: z.array(priorityItemSchema).optional(),
 });
 
 export type Candidate = z.infer<typeof candidateSchema>;
@@ -170,4 +204,7 @@ export type FollowUp = z.infer<typeof followUpSchema>;
 export type CronHealthItem = z.infer<typeof cronHealthItemSchema>;
 export type EffectivenessMetrics = z.infer<typeof effectivenessMetricsSchema>;
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
+export type ClientHealth = z.infer<typeof clientHealthSchema>;
+export type BdReply = z.infer<typeof bdReplySchema>;
+export type PriorityItem = z.infer<typeof priorityItemSchema>;
 export type DashboardData = z.infer<typeof dashboardDataSchema>;
