@@ -27,10 +27,10 @@ export function ResumeGapsPanel({ resumeGaps }: ResumeGapsProps) {
 
   return (
     <div className="space-y-3">
-      <SectionHeader title="Missing Documents" count={resumeGaps.length} subtitle="Past screen stage" />
+      <SectionHeader title="Missing Documents" count={resumeGaps.length} subtitle="Recruiter Screen" />
       {resumeGaps.length === 0 ? (
         <div className="bg-card border rounded-lg p-4 text-sm text-muted-foreground">
-          All candidates past screen have resume and exec summary.
+          All candidates in Recruiter Screen have a resume on file.
         </div>
       ) : (
         <div className="bg-card border rounded-lg overflow-hidden">
