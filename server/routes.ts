@@ -153,7 +153,7 @@ async function buildDashboardData(): Promise<DashboardData> {
   }
 
   await Promise.all(
-    candidatesForFileCheck.slice(0, 80).map(async (rfId) => {
+    candidatesForFileCheck.slice(0, 150).map(async (rfId) => {
       try {
         const d = await rfFetch(`/candidate/get`, { id: String(rfId) });
         fileCache[rfId] = d?.files || [];
