@@ -299,15 +299,9 @@ async function buildDashboardData(): Promise<DashboardData> {
             awaitingNotes.push({ name, client: info.client, role: info.role, rf_link: rfLink });
           }
         }
-      } else if (stage === "Client Interview") {
-        const bd = businessDaysSince(enteredAt);
-        if (bd >= 5) {
-          stalledInterviews.push({
-            name, rf_id: rfId, client: info.client, role: info.role,
-            biz_days: bd, entered_at: enteredAt.slice(0, 10), rf_link: rfLink,
-          });
-        }
-      } else if (ABOVE_SCREEN_STAGES.has(stage)) {
+      } else if (CLIENT_SUBMISSION_STAGES.has(stage)) {
+        // Only flag resume gaps for candidates at Client Submission / Ready stages.
+        // Skip Sent to Client and Client Interview — those are the client's domain.
         const { hasResume, hasExec } = checkFiles(rfId);
         if (!hasResume || !hasExec) {
           resumeGaps.push({
@@ -382,18 +376,7 @@ async function buildDashboardData(): Promise<DashboardData> {
     });
   }
 
-  // 2. Stalled interviews (HIGH if 10+ biz days, NORMAL otherwise)
-  for (const s of stalledInterviews.slice(0, 5)) {
-    priorities.push({
-      type: "stalled_interview",
-      urgency: s.biz_days >= 10 ? "high" : "normal",
-      label: `Follow up — ${s.name} stalled at Client Interview`,
-      sub: `${s.client} / ${s.role} — ${s.biz_days} biz days`,
-      rf_link: s.rf_link,
-    });
-  }
-
-  // 3. Stale screens (NORMAL)
+  // 2. Stale screens (NORMAL)
   for (const s of staleScreen.slice(0, 5)) {
     priorities.push({
       type: "stale_screen",
@@ -451,7 +434,7 @@ async function buildDashboardData(): Promise<DashboardData> {
       recently_moved_count: recentlyMoved.length,
       stale_screen_count: staleScreen.length,
       resume_gaps_count: resumeGaps.length,
-      stalled_interviews_count: stalledInterviews.length,
+      stalled_interviews_count: 0,
       offers_active: offersActive,
       candidates_hired_total: candidatesHiredTotal,
     },
