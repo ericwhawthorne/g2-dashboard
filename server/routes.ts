@@ -145,7 +145,8 @@ async function buildDashboardData(): Promise<DashboardData> {
       const cand = c.candidate || c;
       const { stage } = getCurrentStage(c.stages || []);
       const rfId = cand.id || 0;
-      if (rfId && ABOVE_SCREEN_STAGES.has(stage) && !fileCache[rfId]) {
+      // Check files for above-screen stages AND Recruiter Screen (to detect missing resumes)
+      if (rfId && (ABOVE_SCREEN_STAGES.has(stage) || stage === "Recruiter Screen") && !fileCache[rfId]) {
         candidatesForFileCheck.push(rfId);
       }
     }
@@ -295,7 +296,13 @@ async function buildDashboardData(): Promise<DashboardData> {
         }
         if (rfId && fileCache[rfId]) {
           const { hasResume, hasExec } = checkFiles(rfId);
-          if (hasResume && !hasExec && !awaitingNotes.find(a => a.name === name)) {
+          if (!hasResume) {
+            // Missing resume at Recruiter Screen — flag as gap
+            resumeGaps.push({
+              name, rf_id: rfId, client: info.client, role: info.role,
+              stage, has_resume: false, has_exec: false, rf_link: rfLink,
+            });
+          } else if (!hasExec && !awaitingNotes.find(a => a.name === name)) {
             awaitingNotes.push({ name, client: info.client, role: info.role, rf_link: rfLink });
           }
         }
